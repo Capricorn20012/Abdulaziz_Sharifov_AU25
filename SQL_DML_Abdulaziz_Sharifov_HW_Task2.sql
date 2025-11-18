@@ -109,14 +109,20 @@ CREATE TABLE table_to_delete AS
 SELECT 'veeeeeeery_long_string' || x AS col
 FROM generate_series(1,(10^7)::int) x;
 
---a) DELETE_statement : 11s
+--a) DELETE_statement : 11s 
+		--(The DELETE operation took about 11 seconds.
+		--It is slow because PostgreSQL has to scan all 10 million rows and mark some of them as deleted.)
 --b) Table_size  : 575 MB
+		--The table size did not change, DELETE only marks rows as deleted internally. 
 --c) Execute_time : 4.4s, found 0 removable, 6666667 nonremovable row versions in 73536 pages
+		--VACUUM FULL rebuilds the whole table and removes the deleted rows permanently
 --d) --total_bytes : 401,580,032
 	 --index_bytes : 0
 	 --toast_bytes : 8,192
 	 --table_bytes : 401,571,840
 	 --table_only  : 383 MB
+	 	--After VACUUM FULL, the table size decreased to 383 MB,
+	 	--Only the remaining (live) rows are written into the new table file, so the table becomes physically smaller.
 
 
 
@@ -149,19 +155,25 @@ FROM (
 WHERE table_name LIKE '%table_to_delete%';
 
 --a) Execute_time : 0.0s
+		--TRUNCATE finished instantly (0.0 seconds). TRUNCATE does not delete rows one by one.
+        --It simply removes all data by resetting the table, which is extremely fast.
 --b) TRUNCATE was very fast comparing to DELETE
+		--DELETE is slow because it processes rows individually, DELETE does not reduce table size.
+		--TRUNCATE is almost instant, TRUNCATE frees all disk space immediately.
 --c) --total_bytes : 8,192
 	 --index_bytes : 0
 	 --toast_bytes : 8,192
 	 --table_bytes : 0
 	 --table_only  : 0 MB
+		--After TRUNCATE, the table size was only 8 KB (minimum size for an empty table).
+        --TRUNCATE releases all storage and leaves only the empty table structure.
 
 
 ----Part 5
 --a)Space consumption after creating a table 	= 575 MB
   --Space consumption after DELETE of 1/3 rows= 575 MB
   --Space consumption after VACUUM 			= 383 MB
-  --Space consumption after TRUNCATE 			= 8   KB
+  --Space consumption after TRUNCATE 			= 8KB
 --b)Execution time of the DELETE function 	= 4.4s
   --Execution time of the TRUNCATE function	= 0.0s
 
