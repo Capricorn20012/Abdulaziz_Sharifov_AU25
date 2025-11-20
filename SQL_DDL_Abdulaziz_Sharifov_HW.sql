@@ -12,13 +12,13 @@ CREATE SCHEMA IF NOT EXISTS agency_data;
 
 --1) Table country
 CREATE TABLE IF NOT EXISTS agency_data.country (
-    country_id INT PRIMARY KEY,
+    country_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     country_name VARCHAR(100) NOT NULL unique);
    
     
 --2) Table region   
 CREATE TABLE IF NOT EXISTS agency_data.region (
-    region_id INT PRIMARY KEY,
+    region_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     country_id INT NOT NULL,
     region_name VARCHAR(100) NOT NULL,
     FOREIGN KEY (country_id) REFERENCES agency_data.country(country_id));
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS agency_data.region (
     
 --3) Table city  
 CREATE TABLE IF NOT EXISTS agency_data.city (
-    city_id INT PRIMARY KEY,
+    city_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     region_id INT NOT NULL,
     city_name VARCHAR(100) NOT NULL UNIQUE,
     FOREIGN KEY (region_id) REFERENCES agency_data.region(region_id));
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS agency_data.city (
     
 --4) Table location      
 CREATE TABLE IF NOT EXISTS agency_data.location (
-    location_id INT PRIMARY KEY,
+    location_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     city_id INT NOT NULL,
     address_line VARCHAR(255),
     FOREIGN KEY (city_id) REFERENCES agency_data.city(city_id));
@@ -42,14 +42,14 @@ CREATE TABLE IF NOT EXISTS agency_data.location (
     
 --5) Table industry      
 CREATE TABLE IF NOT EXISTS agency_data.industry (
-    industry_id INT PRIMARY KEY,
+    industry_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     industry_name VARCHAR(50) NOT NULL UNIQUE
 );
 
 
 --6) Table employer  
 CREATE TABLE IF NOT EXISTS agency_data.employer (
-    employer_id INT PRIMARY KEY,
+    employer_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     industry_id INT NOT NULL,
     location_id INT NOT NULL,
     company_name VARCHAR(100) NOT NULL,
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS agency_data.employer (
     
 --7) Table job
 CREATE TABLE IF NOT EXISTS agency_data.job (
-    job_id INT PRIMARY KEY,
+    job_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     employer_id INT NOT NULL,
     location_id INT NOT NULL,
     title VARCHAR(100) NOT NULL,
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS agency_data.job (
     salary_min DECIMAL(10,2) CHECK (salary_min >= 0),
     salary_max DECIMAL(10,2) CHECK (salary_max >= 0),
     posted_date DATE NOT NULL CHECK (posted_date > '2000-01-01'),
-    status VARCHAR(20),
+    status VARCHAR(20) CHECK (status IN ('Open', 'Closed', 'Paused')),
     FOREIGN KEY (employer_id) REFERENCES agency_data.employer(employer_id),
     FOREIGN KEY (location_id) REFERENCES agency_data.location(location_id)
 );
@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS agency_data.job (
 
 --8) Table skill
 CREATE TABLE IF NOT EXISTS agency_data.skill (
-    skill_id INT PRIMARY KEY,
+    skill_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     skill_name VARCHAR(100) NOT NULL UNIQUE,
     category VARCHAR(50) NOT NULL
 );
@@ -86,14 +86,14 @@ CREATE TABLE IF NOT EXISTS agency_data.skill (
 
 --9) Table education_level
 CREATE TABLE IF NOT EXISTS agency_data.education_level (
-    education_level_id INT PRIMARY KEY,
+    education_level_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     education_level VARCHAR(50) NOT NULL UNIQUE
 );
 
 
 --10) Table candidate
 CREATE TABLE IF NOT EXISTS agency_data.candidate (
-    candidate_id INT PRIMARY KEY,
+    candidate_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     education_level_id INT NOT NULL,
     location_id INT NOT NULL,
     first_name VARCHAR(50) NOT NULL,
@@ -107,24 +107,22 @@ CREATE TABLE IF NOT EXISTS agency_data.candidate (
 
 
 --11) Table job_skill
-CREATE TABLE IF NOT EXISTS agency_data.job_skill (
-    id SERIAL PRIMARY KEY, 
+CREATE TABLE agency_data.job_skill (
     job_id INT NOT NULL,
     skill_id INT NOT NULL,
-    required_level VARCHAR(20) NOT NULL,
-    UNIQUE(job_id, skill_id),  
+    required_level VARCHAR(20) CHECK (required_level IN ('Beginner', 'Intermediate', 'Advanced')) NOT NULL,
+    PRIMARY KEY (job_id, skill_id),
     FOREIGN KEY (job_id) REFERENCES agency_data.job(job_id),
     FOREIGN KEY (skill_id) REFERENCES agency_data.skill(skill_id)
 );
 
 
 --12) Table candidate_skill
-CREATE TABLE IF NOT EXISTS agency_data.candidate_skill (
-    id SERIAL PRIMARY KEY,  
+CREATE TABLE agency_data.candidate_skill (
     candidate_id INT NOT NULL,
     skill_id INT NOT NULL,
-    proficiency_level VARCHAR(20) NOT NULL,
-    UNIQUE(candidate_id, skill_id),
+    proficiency_level VARCHAR(20) CHECK (proficiency_level IN ('Beginner', 'Intermediate', 'Advanced')) NOT NULL,
+    PRIMARY KEY (candidate_id, skill_id),
     FOREIGN KEY (candidate_id) REFERENCES agency_data.candidate(candidate_id),
     FOREIGN KEY (skill_id) REFERENCES agency_data.skill(skill_id)
 );
@@ -132,7 +130,7 @@ CREATE TABLE IF NOT EXISTS agency_data.candidate_skill (
 
 --13) Table services
 CREATE TABLE IF NOT EXISTS agency_data.services (
-    service_id INT PRIMARY KEY,
+    service_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     service_name VARCHAR(100) NOT NULL UNIQUE,
     description TEXT,
     price DECIMAL(10,2) NOT NULL CHECK (price > 0)
@@ -140,13 +138,12 @@ CREATE TABLE IF NOT EXISTS agency_data.services (
 
 
 --14) Table candidate_service
-CREATE TABLE IF NOT EXISTS agency_data.candidate_service (
-    id SERIAL PRIMARY KEY,
+CREATE TABLE agency_data.candidate_service (
     candidate_id INT NOT NULL,
     service_id INT NOT NULL,
     status VARCHAR(20),
     purchase_date DATE NOT NULL CHECK (purchase_date > '2000-01-01'),
-    UNIQUE(candidate_id, service_id),  
+    PRIMARY KEY (candidate_id, service_id),
     FOREIGN KEY (candidate_id) REFERENCES agency_data.candidate(candidate_id),
     FOREIGN KEY (service_id) REFERENCES agency_data.services(service_id)
 );
@@ -154,11 +151,11 @@ CREATE TABLE IF NOT EXISTS agency_data.candidate_service (
 
 --15) Table application 
 CREATE TABLE IF NOT EXISTS agency_data.application (
-    application_id INT PRIMARY KEY,
+    application_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     candidate_id INT NOT NULL,
     job_id INT NOT NULL,
     application_date DATE NOT NULL CHECK (application_date > '2000-01-01'),
-    status VARCHAR(20),
+    status VARCHAR(20) CHECK (status IN ('Submitted', 'Reviewed', 'Rejected', 'Accepted')),
     FOREIGN KEY (candidate_id) REFERENCES agency_data.candidate(candidate_id),
     FOREIGN KEY (job_id) REFERENCES agency_data.job(job_id)
 );
@@ -166,11 +163,11 @@ CREATE TABLE IF NOT EXISTS agency_data.application (
 
 --16) Table interview
 CREATE TABLE IF NOT EXISTS agency_data.interview (
-    interview_id INT PRIMARY KEY,
+    interview_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     application_id INT NOT NULL,
     interview_date TIMESTAMP NOT NULL CHECK (interview_date > '2000-01-01'),
     interviewer_name VARCHAR(100),
-    result VARCHAR(20),
+    result VARCHAR(20) CHECK (result IN ('Passed', 'Failed', 'Pending')),
     notes TEXT,
     FOREIGN KEY (application_id) REFERENCES agency_data.application(application_id)
 );
@@ -178,7 +175,7 @@ CREATE TABLE IF NOT EXISTS agency_data.interview (
 
 --17) Table placement
 CREATE TABLE IF NOT EXISTS agency_data.placement (
-    placement_id INT PRIMARY KEY,
+    placement_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     job_id INT NOT NULL,
     candidate_id INT NOT NULL,
     start_date DATE NOT NULL CHECK (start_date > '2000-01-01'),
@@ -193,123 +190,304 @@ CREATE TABLE IF NOT EXISTS agency_data.placement (
 --Adding Samples
 
 --1) Table country
-	INSERT INTO agency_data.country (country_id, country_name)
-	VALUES
-	(1, 'Uzbekistan'),
-	(2, 'Germany')
-	ON CONFLICT (country_id) DO NOTHING;
+	INSERT INTO agency_data.country (country_name)
+	VALUES 
+	('Uzbekistan'),
+	('Germany')
+	ON CONFLICT DO NOTHING;
 
 --2) Table region  
-	INSERT INTO agency_data.region (region_id, country_id, region_name)
-	VALUES
-	(1, 1, 'Tashkent Region'),
-	(2, 2, 'Bavaria')
-	ON CONFLICT (region_id) DO NOTHING;
+	INSERT INTO agency_data.region (country_id, region_name)
+	SELECT c.country_id, 'Tashkent Region'
+	FROM agency_data.country c
+	WHERE c.country_name = 'Uzbekistan'
+	ON CONFLICT DO NOTHING;
+	
+	INSERT INTO agency_data.region (country_id, region_name)
+	SELECT c.country_id, 'Bavaria'
+	FROM agency_data.country c
+	WHERE c.country_name = 'Germany'
+	ON CONFLICT DO NOTHING;
 
 --3) Table city  
-	INSERT INTO agency_data.city (city_id, region_id, city_name)
-	VALUES
-	(1, 1, 'Tashkent'),
-	(2, 2, 'Munich')
-	ON CONFLICT (city_id) DO NOTHING;
+	INSERT INTO agency_data.city (region_id, city_name)
+	SELECT r.region_id, 'Tashkent'
+	FROM agency_data.region r
+	WHERE r.region_name = 'Tashkent Region'
+	ON CONFLICT DO NOTHING;
+	
+	INSERT INTO agency_data.city (region_id, city_name)
+	SELECT r.region_id, 'Munich'
+	FROM agency_data.region r
+	WHERE r.region_name = 'Bavaria'
+	ON CONFLICT DO NOTHING;
 
 --4) Table location 
-	INSERT INTO agency_data.location (location_id, city_id, address_line)
-	VALUES
-	(1, 1, 'Chilanzar 15'),
-	(2, 2, 'Marienplatz 1')
-	ON CONFLICT (location_id) DO NOTHING;
+	INSERT INTO agency_data.location (city_id, address_line)
+	SELECT c.city_id, 'Chilanzar 15'
+	FROM agency_data.city c
+	WHERE c.city_name = 'Tashkent'
+	ON CONFLICT DO NOTHING;
+	
+	INSERT INTO agency_data.location (city_id, address_line)
+	SELECT c.city_id, 'Marienplatz 1'
+	FROM agency_data.city c
+	WHERE c.city_name = 'Munich'
+	ON CONFLICT DO NOTHING;
 
 --5) Table industry
-	INSERT INTO agency_data.industry (industry_id, industry_name)
-	VALUES
-	(1, 'IT'),
-	(2, 'Construction')
-	ON CONFLICT (industry_id) DO NOTHING;
+	INSERT INTO agency_data.industry (industry_name)
+	VALUES 
+	('IT'),
+	('Construction')
+	ON CONFLICT DO NOTHING;
 
 --6) Table employer 
-	INSERT INTO agency_data.employer (employer_id, industry_id, location_id, company_name, contact_name, contact_email, contact_phone)
-	VALUES
-	(1, 1, 1, 'Tech Solutions', 'Kim Alex', 'alice@tech.com', '+998901234567'),
-	(2, 2, 2, 'BuildCorp', 'Bob Müller', 'bob@build.com', '+498912345678')
-	ON CONFLICT (employer_id) DO NOTHING;
+	INSERT INTO agency_data.employer (industry_id, location_id, company_name, contact_name, contact_email, contact_phone)
+	SELECT 
+	    i.industry_id,
+	    l.location_id,
+	    'Tech Solutions',
+	    'Kim Alex',
+	    'alice@tech.com',
+	    '+998901234567'
+	FROM agency_data.industry i
+	JOIN agency_data.location l ON l.address_line = 'Chilanzar 15'
+	WHERE i.industry_name = 'IT'
+	ON CONFLICT DO NOTHING;
+
+
+	INSERT INTO agency_data.employer (industry_id, location_id, company_name, contact_name, contact_email, contact_phone)
+	SELECT 
+	    i.industry_id,
+	    l.location_id,
+	    'BuildCorp',
+	    'Bob Müller',
+	    'bob@build.com',
+	    '+498912345678'
+	FROM agency_data.industry i
+	JOIN agency_data.location l ON l.address_line = 'Marienplatz 1'
+	WHERE i.industry_name = 'Construction'
+	ON CONFLICT DO NOTHING;
 
 --7) Table job
-	INSERT INTO agency_data.job (job_id, employer_id, location_id, title, description, salary_min, salary_max, posted_date, status)
-	VALUES
-	(1, 1, 1, 'Software Engineer', 'Develop software applications', 1000.00, 2000.00, '2025-01-01', 'Open'),
-	(2, 2, 2, 'Project Manager', 'Manage construction projects', 1500.00, 2500.00, '2025-01-05', 'Open')
-	ON CONFLICT (job_id) DO NOTHING;
+	INSERT INTO agency_data.job (employer_id, location_id, title, description, salary_min, salary_max, posted_date, status)
+	SELECT 
+	    e.employer_id,
+	    e.location_id,
+	    'Software Engineer',
+	    'Develop software applications',
+	    1000.00,
+	    2000.00,
+	    '2025-01-01',
+	    'Open'
+	FROM agency_data.employer e
+	WHERE e.company_name = 'Tech Solutions'
+	ON CONFLICT DO NOTHING;
+	
+	INSERT INTO agency_data.job (employer_id, location_id, title, description, salary_min, salary_max, posted_date, status)
+	SELECT 
+	    e.employer_id,
+	    e.location_id,
+	    'Project Manager',
+	    'Manage construction projects',
+	    1500.00,
+	    2500.00,
+	    '2025-01-05',
+	    'Open'
+	FROM agency_data.employer e
+	WHERE e.company_name = 'BuildCorp'
+	ON CONFLICT DO NOTHING;
 
 --8) Table skill
-	INSERT INTO agency_data.skill (skill_id, skill_name, category)
-	VALUES
-	(1, 'Python', 'Programming'),
-	(2, 'Project Management', 'Management')
-	ON CONFLICT (skill_id) DO NOTHING;
+	INSERT INTO agency_data.skill (skill_name, category)
+	VALUES 
+	('Python', 'Programming'),
+	('Project Management', 'Management')
+	ON CONFLICT DO NOTHING;
 
 --9) Table education_level
-	INSERT INTO agency_data.education_level (education_level_id, education_level)
-	VALUES
-	(1, 'Bachelor'),
-	(2, 'Master')
-	ON CONFLICT (education_level_id) DO NOTHING;
+	INSERT INTO agency_data.education_level (education_level)
+	VALUES 
+	('Bachelor'),
+	('Master')
+	ON CONFLICT DO NOTHING;
 
 --10) Table candidate
-	INSERT INTO agency_data.candidate (candidate_id, education_level_id, location_id, first_name, last_name, email, phone, experience_years)
-	VALUES
-	(1, 1, 1, 'Abdulaziz', 'Sharifov', 'john@example.com', '+998901112233', 3),
-	(2, 2, 2, 'Maria', 'Schmidt', 'maria@example.de', '+498912223344', 5)
-	ON CONFLICT (candidate_id) DO NOTHING;
+	INSERT INTO agency_data.candidate (education_level_id, location_id, first_name, last_name, email, phone, experience_years)
+	SELECT 
+	    e.education_level_id,
+	    l.location_id,
+	    'Abdulaziz',
+	    'Sharifov',
+	    'john@example.com',
+	    '+998901112233',
+	    3
+	FROM agency_data.education_level e
+	JOIN agency_data.location l ON l.address_line = 'Chilanzar 15'
+	WHERE e.education_level = 'Bachelor'
+	ON CONFLICT DO NOTHING;
+	
+	
+	INSERT INTO agency_data.candidate (education_level_id, location_id, first_name, last_name, email, phone, experience_years)
+	SELECT 
+	    e.education_level_id,
+	    l.location_id,
+	    'Maria',
+	    'Schmidt',
+	    'maria@example.de',
+	    '+498912223344',
+	    5
+	FROM agency_data.education_level e
+	JOIN agency_data.location l ON l.address_line = 'Marienplatz 1'
+	WHERE e.education_level = 'Master'
+	ON CONFLICT DO NOTHING;
 
 --11) Table job_skill
 	INSERT INTO agency_data.job_skill (job_id, skill_id, required_level)
-	VALUES
-	(1, 1, 'Advanced'),
-	(2, 2, 'Intermediate')
-	ON CONFLICT (job_id, skill_id) DO NOTHING;
+	SELECT 
+	    j.job_id,
+	    s.skill_id,
+	    'Advanced'
+	FROM agency_data.job j, agency_data.skill s
+	WHERE j.title = 'Software Engineer'
+	  AND s.skill_name = 'Python'
+	ON CONFLICT DO NOTHING;
+	
+	INSERT INTO agency_data.job_skill (job_id, skill_id, required_level)
+	SELECT 
+	    j.job_id,
+	    s.skill_id,
+	    'Intermediate'
+	FROM agency_data.job j, agency_data.skill s
+	WHERE j.title = 'Project Manager'
+	  AND s.skill_name = 'Project Management'
+	ON CONFLICT DO NOTHING;
 
 --12) Table candidate_skill
 	INSERT INTO agency_data.candidate_skill (candidate_id, skill_id, proficiency_level)
-	VALUES
-	(1, 1, 'Intermediate'),
-	(2, 2, 'Advanced')
-	ON CONFLICT (candidate_id, skill_id) DO NOTHING;
+	SELECT 
+	    c.candidate_id,
+	    s.skill_id,
+	    'Intermediate'
+	FROM agency_data.candidate c, agency_data.skill s
+	WHERE c.email = 'john@example.com'
+	  AND s.skill_name = 'Python'
+	ON CONFLICT DO NOTHING;
+	
+	INSERT INTO agency_data.candidate_skill (candidate_id, skill_id, proficiency_level)
+	SELECT 
+	    c.candidate_id,
+	    s.skill_id,
+	    'Advanced'
+	FROM agency_data.candidate c, agency_data.skill s
+	WHERE c.email = 'maria@example.de'
+	  AND s.skill_name = 'Project Management'
+	ON CONFLICT DO NOTHING;
 
 --13) Table services
-	INSERT INTO agency_data.services (service_id, service_name, description, price)
+	INSERT INTO agency_data.services (service_name, description, price)
 	VALUES
-	(1, 'Resume Review', 'Professional resume review service', 50.00),
-	(2, 'Interview Coaching', 'Prepare for interviews', 100.00)
-	ON CONFLICT (service_id) DO NOTHING;
+	('Resume Review', 'Professional resume review service', 50.00),
+	('Interview Coaching', 'Prepare for interviews', 100.00)
+	ON CONFLICT DO NOTHING;
 
 --14) Table candidate_service
 	INSERT INTO agency_data.candidate_service (candidate_id, service_id, status, purchase_date)
-	VALUES
-	(1, 1, 'Completed', '2025-11-01'),
-	(2, 2, 'Pending', '2025-11-03')
-	ON CONFLICT (candidate_id, service_id) DO NOTHING;
+	SELECT 
+	    c.candidate_id,
+	    s.service_id,
+	    'Completed',
+	    '2025-11-01'
+	FROM agency_data.candidate c, agency_data.services s
+	WHERE c.email = 'john@example.com'
+	  AND s.service_name = 'Resume Review'
+	ON CONFLICT DO NOTHING;
+	
+	INSERT INTO agency_data.candidate_service (candidate_id, service_id, status, purchase_date)
+	SELECT 
+	    c.candidate_id,
+	    s.service_id,
+	    'Pending',
+	    '2025-11-03'
+	FROM agency_data.candidate c, agency_data.services s
+	WHERE c.email = 'maria@example.de'
+	  AND s.service_name = 'Interview Coaching'
+	ON CONFLICT DO NOTHING;
 
 --15) Table application 
-	INSERT INTO agency_data.application (application_id, candidate_id, job_id, application_date, status)
-	VALUES
-	(1, 1, 1, '2025-11-05', 'Submitted'),
-	(2, 2, 2, '2025-11-06', 'Submitted')
-	ON CONFLICT (application_id) DO NOTHING;
+	INSERT INTO agency_data.application (candidate_id, job_id, application_date, status)
+	SELECT 
+	    c.candidate_id,
+	    j.job_id,
+	    '2025-11-05',
+	    'Submitted'
+	FROM agency_data.candidate c, agency_data.job j
+	WHERE c.email = 'john@example.com'
+	  AND j.title = 'Software Engineer'
+	ON CONFLICT DO NOTHING;
+	
+	INSERT INTO agency_data.application (candidate_id, job_id, application_date, status)
+	SELECT 
+	    c.candidate_id,
+	    j.job_id,
+	    '2025-11-06',
+	    'Submitted'
+	FROM agency_data.candidate c, agency_data.job j
+	WHERE c.email = 'maria@example.de'
+	  AND j.title = 'Project Manager'
+	ON CONFLICT DO NOTHING;
 
 --16) Table interview
-	INSERT INTO agency_data.interview (interview_id, application_id, interview_date, interviewer_name, result, notes)
-	VALUES
-	(1, 1, '2025-11-10 10:00', 'Alice Smith', 'Pending', 'First round'),
-	(2, 2, '2025-11-11 14:00', 'Bob Müller', 'Pending', 'First round')
-	ON CONFLICT (interview_id) DO NOTHING;
+	INSERT INTO agency_data.interview (application_id, interview_date, interviewer_name, result, notes)
+	SELECT 
+	    a.application_id,
+	    '2025-11-10 10:00',
+	    'Alice Smith',
+	    'Pending',
+	    'First round'
+	FROM agency_data.application a
+	JOIN agency_data.candidate c ON c.candidate_id = a.candidate_id
+	WHERE c.email = 'john@example.com'
+	ON CONFLICT DO NOTHING;
+	
+	INSERT INTO agency_data.interview (application_id, interview_date, interviewer_name, result, notes)
+	SELECT 
+	    a.application_id,
+	    '2025-11-11 14:00',
+	    'Bob Müller',
+	    'Pending',
+	    'First round'
+	FROM agency_data.application a
+	JOIN agency_data.candidate c ON c.candidate_id = a.candidate_id
+	WHERE c.email = 'maria@example.de'
+	ON CONFLICT DO NOTHING;
 
 --17) Table placement
-	INSERT INTO agency_data.placement (placement_id, job_id, candidate_id, start_date, end_date, salary_offered)
-	VALUES
-	(1, 1, 1, '2025-12-01', NULL, 1500.00),
-	(2, 2, 2, '2025-12-15', NULL, 2000.00)
-	ON CONFLICT (placement_id) DO NOTHING;
+	INSERT INTO agency_data.placement (job_id, candidate_id, start_date, end_date, salary_offered)
+	SELECT 
+	    j.job_id,
+	    c.candidate_id,
+	    '2025-12-01',
+	    NULL,
+	    1500.00
+	FROM agency_data.job j, agency_data.candidate c
+	WHERE j.title = 'Software Engineer'
+	  AND c.email = 'john@example.com'
+	ON CONFLICT DO NOTHING;
+	
+	
+	INSERT INTO agency_data.placement (job_id, candidate_id, start_date, end_date, salary_offered)
+	SELECT 
+	    j.job_id,
+	    c.candidate_id,
+	    '2025-12-15',
+	    NULL,
+	    2000.00
+	FROM agency_data.job j, agency_data.candidate c
+	WHERE j.title = 'Project Manager'
+	  AND c.email = 'maria@example.de'
+	ON CONFLICT DO NOTHING;
 
 
 --Adding record_ts
