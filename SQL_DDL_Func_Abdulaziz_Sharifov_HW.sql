@@ -3,34 +3,31 @@
 
 --TASK 1
 
-CREATE OR REPLACE VIEW sales_revenue_by_category_qtr AS
-WITH current_q AS (
-    SELECT 
-        date_trunc('quarter', CURRENT_DATE)::date AS q_start,
-        (date_trunc('quarter', CURRENT_DATE) + INTERVAL '3 month')::date AS q_end
-)
+DROP VIEW IF EXISTS public.sales_revenue_by_category_qtr;
+
+CREATE VIEW public.sales_revenue_by_category_qtr AS
 SELECT
     c.name AS category_name,
     SUM(p.amount) AS total_revenue,
-    cq.q_start AS quarter_start,
-    (cq.q_end - 1) AS quarter_end,
-    EXTRACT(YEAR FROM cq.q_start)::int AS year
-FROM current_q cq
-JOIN payment p 
-    ON p.payment_date::date >= cq.q_start
-   AND p.payment_date::date < cq.q_end
-JOIN rental r ON r.rental_id = p.rental_id
-JOIN inventory i ON i.inventory_id = r.inventory_id
-JOIN film_category fc ON fc.film_id = i.film_id
-JOIN category c ON c.category_id = fc.category_id
-GROUP BY c.name, cq.q_start, cq.q_end
+    date_trunc('quarter', current_date)::date AS quarter_start,
+    (date_trunc('quarter', current_date) + interval '3 month' - interval '1 day')::date AS quarter_end,
+    EXTRACT(YEAR FROM current_date)::int AS year
+FROM public.payment p
+JOIN public.rental r        ON r.rental_id     = p.rental_id
+JOIN public.inventory i     ON i.inventory_id  = r.inventory_id
+JOIN public.film_category fc ON fc.film_id     = i.film_id
+JOIN public.category c      ON c.category_id   = fc.category_id
+WHERE EXTRACT(YEAR FROM p.payment_date)    = EXTRACT(YEAR FROM current_date)
+  AND EXTRACT(QUARTER FROM p.payment_date) = EXTRACT(QUARTER FROM current_date)
+GROUP BY c.name
 HAVING SUM(p.amount) > 0;
 
 
 --TASK 2
 
 CREATE OR REPLACE FUNCTION get_sales_revenue_by_category_qtr(
-    p_date date DEFAULT NULL
+    p_quarter int DEFAULT EXTRACT(QUARTER FROM CURRENT_DATE),
+    p_year    int DEFAULT EXTRACT(YEAR FROM CURRENT_DATE)
 )
 RETURNS TABLE (
     category_name text,
@@ -39,107 +36,131 @@ RETURNS TABLE (
     quarter_end date,
     year int
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 AS $$
+BEGIN
+
+    IF p_quarter NOT BETWEEN 1 AND 4 THEN
+        RAISE EXCEPTION 'Quarter must be between 1 and 4. Got: %', p_quarter;
+    END IF;
+
+    IF p_year < 2000 THEN
+        RAISE EXCEPTION 'Year must be >= 2000. Got: %', p_year;
+    END IF;
+
+    RETURN QUERY
     WITH q AS (
-        SELECT 
-            date_trunc('quarter', COALESCE(p_date, CURRENT_DATE))::date AS q_start,
-            (date_trunc('quarter', COALESCE(p_date, CURRENT_DATE)) 
-                 + INTERVAL '3 month')::date AS q_end
+        SELECT
+            date_trunc('quarter', make_date(p_year, (p_quarter - 1) * 3 + 1, 1))::date AS q_start,
+            (date_trunc('quarter', make_date(p_year, (p_quarter - 1) * 3 + 1, 1)) 
+             + INTERVAL '3 month' - INTERVAL '1 day')::date AS q_end
     )
     SELECT
         c.name AS category_name,
         SUM(p.amount) AS total_revenue,
         q.q_start AS quarter_start,
-        (q.q_end - 1)::date AS quarter_end,
-        EXTRACT(YEAR FROM q.q_start)::int AS year
+        q.q_end AS quarter_end,
+        p_year AS year
     FROM q
-    JOIN payment p 
-        ON p.payment_date::date >= q.q_start
-       AND p.payment_date::date <  q.q_end
-    JOIN rental r ON r.rental_id = p.rental_id
-    JOIN inventory i ON i.inventory_id = r.inventory_id
-    JOIN film_category fc ON fc.film_id = i.film_id
-    JOIN category c ON c.category_id = fc.category_id
+    JOIN public.payment p 
+        ON EXTRACT(YEAR FROM p.payment_date) = p_year
+       AND EXTRACT(QUARTER FROM p.payment_date) = p_quarter
+    JOIN public.rental r        ON r.rental_id = p.rental_id
+    JOIN public.inventory i     ON i.inventory_id = r.inventory_id
+    JOIN public.film_category fc ON fc.film_id = i.film_id
+    JOIN public.category c      ON c.category_id = fc.category_id
     GROUP BY c.name, q.q_start, q.q_end
     HAVING SUM(p.amount) > 0;
+
+END;
 $$;
 
 
 --TASK 3
 
+
 CREATE OR REPLACE FUNCTION most_popular_films_by_countries(
     p_countries text[]
 )
 RETURNS TABLE (
-    country text,
+    country_name text,
     film_title text,
     rating text,
-    language text,
+    language_name text,
     length int,
     release_year int
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 AS $$
-WITH input_countries AS (
-    SELECT unnest(p_countries) AS country_name
-),
+DECLARE
+    rec_country text;
+    v_country_id int;
+    v_max_rentals int;
+BEGIN
+    
+    IF p_countries IS NULL OR array_length(p_countries, 1) IS NULL THEN
+        RAISE EXCEPTION 'Input array is empty';
+    END IF;
 
-validated AS (
-    SELECT 
-        ic.country_name,
-        c.country_id,
-        c.country
-    FROM input_countries ic
-    JOIN country c ON c.country = ic.country_name
-),
+    
+    FOREACH rec_country IN ARRAY p_countries LOOP
+        
+        
+        SELECT country_id INTO v_country_id
+        FROM public.country
+        WHERE LOWER(country) = LOWER(rec_country);
 
-film_stats AS (
-    SELECT 
-        v.country,
-        f.film_id,
-        f.title AS film_title,
-        f.rating,
-        l.name AS language,
-        f.length,
-        f.release_year,
-        COUNT(r.rental_id) AS rentals_count
-    FROM validated v
-    JOIN city ci      ON ci.country_id = v.country_id
-    JOIN address a    ON a.city_id = ci.city_id
-    JOIN store s      ON s.address_id = a.address_id
-    JOIN inventory i  ON i.store_id = s.store_id
-    JOIN film f       ON f.film_id = i.film_id
-    JOIN language l   ON l.language_id = f.language_id
-    LEFT JOIN rental r ON r.inventory_id = i.inventory_id
-    GROUP BY 
-        v.country, f.film_id, f.title, f.rating, l.name, f.length, f.release_year
-),
+        IF v_country_id IS NULL THEN
+            RAISE EXCEPTION 'Country "%" not found in database', rec_country;
+        END IF;
 
-ranked AS (
-    SELECT 
-        *,
-        ROW_NUMBER() OVER (
-            PARTITION BY country ORDER BY rentals_count DESC, film_id
-        ) AS rn
-    FROM film_stats
-)
+        
+        SELECT MAX(cnt) INTO v_max_rentals
+        FROM (
+            SELECT COUNT(r.rental_id) AS cnt
+            FROM public.city ci
+            JOIN public.address a    ON a.city_id = ci.city_id
+            JOIN public.store s      ON s.address_id = a.address_id
+            JOIN public.inventory i  ON i.store_id = s.store_id
+            JOIN public.film f       ON f.film_id = i.film_id
+            LEFT JOIN public.rental r ON r.inventory_id = i.inventory_id
+            WHERE ci.country_id = v_country_id
+            GROUP BY f.film_id
+        ) AS sub;
 
-SELECT 
-    country,
-    film_title,
-    rating,
-    language,
-    length,
-    release_year
-FROM ranked
-WHERE rn = 1;
+        
+        RETURN QUERY
+        SELECT 
+            c.country AS country_name,
+            f.title AS film_title,
+            f.rating,
+            l.name AS language_name,
+            f.length,
+            f.release_year
+        FROM public.country c
+        JOIN public.city ci      ON ci.country_id = c.country_id
+        JOIN public.address a    ON a.city_id = ci.city_id
+        JOIN public.store s      ON s.address_id = a.address_id
+        JOIN public.inventory i  ON i.store_id = s.store_id
+        JOIN public.film f       ON f.film_id = i.film_id
+        JOIN public.language l   ON l.language_id = f.language_id
+        LEFT JOIN public.rental r ON r.inventory_id = i.inventory_id
+        WHERE c.country_id = v_country_id
+        GROUP BY 
+            c.country, f.title, f.rating, l.name, f.length, f.release_year
+        HAVING COUNT(r.rental_id) = v_max_rentals;
+
+    END LOOP;
+
+END;
 $$;
+
+SELECT * FROM most_popular_films_by_countries(
+    ARRAY['Afghanistan','Brazil','United States']
+);
 
 
 --TASK 4
-
-DROP FUNCTION IF EXISTS public.films_in_stock_by_title(text);
 
 CREATE OR REPLACE FUNCTION public.films_in_stock_by_title(
     p_title_pattern text
@@ -153,60 +174,60 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 AS $$
-DECLARE
-    r RECORD;
-    counter int := 0;
 BEGIN
-    IF p_title_pattern IS NULL OR p_title_pattern = '' THEN
+    IF p_title_pattern IS NULL OR TRIM(p_title_pattern) = '' THEN
         RAISE EXCEPTION 'Pattern cannot be empty';
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM film f WHERE f.title ILIKE p_title_pattern
+        SELECT 1 FROM public.film WHERE title ILIKE p_title_pattern
     ) THEN
         RAISE EXCEPTION 'No films found matching pattern %', p_title_pattern;
     END IF;
 
-    FOR r IN
+    RETURN QUERY
+    WITH available_inventory AS (
         SELECT 
+            i.inventory_id,
             f.title AS film_title,
-            l.name AS language,
-            c.first_name || ' ' || c.last_name AS customer_name,
-            rt.rental_date AS rental_date
-        FROM film f
-        JOIN language l ON l.language_id = f.language_id
-        JOIN inventory i ON i.film_id = f.film_id
-
-        LEFT JOIN rental rt ON rt.inventory_id = i.inventory_id 
-                            AND rt.return_date IS NULL
-        LEFT JOIN customer c ON c.customer_id = rt.customer_id
-
+            l.name AS language
+        FROM public.film f
+        JOIN public.language l ON l.language_id = f.language_id
+        JOIN public.inventory i ON i.film_id = f.film_id
         WHERE f.title ILIKE p_title_pattern
-          AND rt.rental_id IS NULL        
-    LOOP
-        counter := counter + 1;
+          AND i.inventory_id NOT IN (
+                SELECT inventory_id 
+                FROM public.rental 
+                WHERE return_date IS NULL
+          )
+    )
+    SELECT
+        ROW_NUMBER() OVER (ORDER BY ai.film_title)::int AS "Row_num",
+        ai.film_title AS "Film title",
+        trim(ai.language)::text AS "Language",
+        CASE 
+            WHEN lr.first_name IS NULL THEN NULL
+            ELSE lr.first_name || ' ' || lr.last_name 
+        END AS "Customer name",
+        lr.rental_date::timestamp AS "Rental date" 
+    FROM available_inventory ai
+    LEFT JOIN LATERAL (
+        SELECT r.rental_date, c.first_name, c.last_name
+        FROM public.rental r
+        JOIN public.customer c ON c.customer_id = r.customer_id
+        WHERE r.inventory_id = ai.inventory_id
+        ORDER BY r.rental_date DESC
+        LIMIT 1
+    ) lr ON TRUE;
 
-        "Row_num"     := counter;
-        "Film title"  := r.film_title;
-        "Language"    := r.language;
-        "Customer name" := r.customer_name;
-        "Rental date"   := r.rental_date;
-
-        RETURN NEXT;
-    END LOOP;
-
-    IF counter = 0 THEN
-        RAISE NOTICE 'Films found, but none of them are currently in stock.';
-    END IF;
-
-    RETURN;
 END;
 $$;
 
 
+
 --TASK 5
 
-CREATE OR REPLACE FUNCTION new_movie(
+CREATE OR REPLACE FUNCTION public.new_movie(
     p_title text,
     p_release_year int DEFAULT EXTRACT(YEAR FROM CURRENT_DATE),
     p_language text DEFAULT 'Klingon'
@@ -218,28 +239,29 @@ DECLARE
     v_lang_id int;
     v_film_id int;
 BEGIN
- 
+
     IF p_title IS NULL OR TRIM(p_title) = '' THEN
         RAISE EXCEPTION 'Title cannot be empty';
     END IF;
 
-    IF EXISTS (SELECT 1 FROM film WHERE title = p_title) THEN
+    IF EXISTS (SELECT 1 FROM public.film WHERE LOWER(title) = LOWER(p_title)) THEN
         RAISE EXCEPTION 'Film "%" already exists', p_title;
     END IF;
 
     SELECT language_id INTO v_lang_id
-    FROM language
-    WHERE name = p_language;
+    FROM public.language
+    WHERE LOWER(name) = LOWER(p_language);
 
     IF v_lang_id IS NULL THEN
-        RAISE EXCEPTION 'Language "%" does not exist. Pass correct language.', p_language;
+        INSERT INTO public.language(name, last_update)
+        VALUES (p_language, NOW())
+        RETURNING language_id INTO v_lang_id;
     END IF;
 
-    SELECT COALESCE(MAX(film_id), 0) + 1
-    INTO v_film_id
-    FROM film;
+    SELECT COALESCE(MAX(film_id), 0) + 1 INTO v_film_id
+    FROM public.film;
 
-    INSERT INTO film (
+    INSERT INTO public.film (
         film_id, title, description,
         release_year, language_id,
         rental_duration, rental_rate,
@@ -252,9 +274,13 @@ BEGIN
         19.99, NOW()
     );
 
-    RETURN format('Film "%" inserted with id % and language "%"', p_title, v_film_id, p_language);
+    RETURN format(
+        'Film %s inserted with id %s and language %s',
+        p_title, v_film_id, p_language
+    );
 END;
 $$;
+
 
 
 
