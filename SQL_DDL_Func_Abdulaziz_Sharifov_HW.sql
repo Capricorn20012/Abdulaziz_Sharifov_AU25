@@ -76,88 +76,77 @@ END;
 $$;
 
 
---TASK 3
+--TASK 3  
 
-
-CREATE OR REPLACE FUNCTION most_popular_films_by_countries(
-    p_countries text[]
+CREATE OR REPLACE FUNCTION public.most_popular_films_by_countries(
+    countries TEXT[] DEFAULT NULL
 )
 RETURNS TABLE (
-    country_name text,
-    film_title text,
-    rating text,
-    language_name text,
-    length int,
-    release_year int
+    country_name   TEXT,
+    film_title     TEXT,
+    rating         TEXT,
+    language_name  TEXT,
+    length         INTEGER,
+    release_year   INTEGER
 )
 LANGUAGE plpgsql
-AS $$
-DECLARE
-    rec_country text;
-    v_country_id int;
-    v_max_rentals int;
+AS
+$$
 BEGIN
-    
-    IF p_countries IS NULL OR array_length(p_countries, 1) IS NULL THEN
-        RAISE EXCEPTION 'Input array is empty';
+ 
+    IF countries IS NULL OR array_length(countries, 1) IS NULL THEN
+        RAISE EXCEPTION
+            'Input parameter "countries" must be a non-empty array of country names.';
     END IF;
 
-    
-    FOREACH rec_country IN ARRAY p_countries LOOP
-        
-        
-        SELECT country_id INTO v_country_id
-        FROM public.country
-        WHERE LOWER(country) = LOWER(rec_country);
-
-        IF v_country_id IS NULL THEN
-            RAISE EXCEPTION 'Country "%" not found in database', rec_country;
-        END IF;
-
-        
-        SELECT MAX(cnt) INTO v_max_rentals
-        FROM (
-            SELECT COUNT(r.rental_id) AS cnt
-            FROM public.city ci
-            JOIN public.address a    ON a.city_id = ci.city_id
-            JOIN public.store s      ON s.address_id = a.address_id
-            JOIN public.inventory i  ON i.store_id = s.store_id
-            JOIN public.film f       ON f.film_id = i.film_id
-            LEFT JOIN public.rental r ON r.inventory_id = i.inventory_id
-            WHERE ci.country_id = v_country_id
-            GROUP BY f.film_id
-        ) AS sub;
-
-        
-        RETURN QUERY
-        SELECT 
-            c.country AS country_name,
-            f.title AS film_title,
+    RETURN QUERY
+    WITH film_stats AS (
+        SELECT
+            c.country                                AS ctry_name,
+            f.title                                  AS flm_title,
+            f.rating::TEXT                           AS flm_rating,
+            l.name::TEXT                             AS lang_name,
+            f.length::INTEGER                        AS flm_length,
+            f.release_year::INTEGER                  AS flm_release_year,
+            COUNT(r.rental_id)                       AS rental_count,
+            ROW_NUMBER() OVER (
+                PARTITION BY c.country
+                ORDER BY COUNT(r.rental_id) DESC, f.title
+            )                                        AS rn
+        FROM country c
+        JOIN city      ci ON ci.country_id  = c.country_id
+        JOIN address   a  ON a.city_id      = ci.city_id
+        JOIN customer  cu ON cu.address_id  = a.address_id
+        JOIN rental    r  ON r.customer_id  = cu.customer_id
+        JOIN inventory i  ON i.inventory_id = r.inventory_id
+        JOIN film      f  ON f.film_id      = i.film_id
+        JOIN language  l  ON l.language_id  = f.language_id
+        WHERE c.country = ANY (countries)
+        GROUP BY
+            c.country,
+            f.title,
             f.rating,
-            l.name AS language_name,
+            l.name,
             f.length,
             f.release_year
-        FROM public.country c
-        JOIN public.city ci      ON ci.country_id = c.country_id
-        JOIN public.address a    ON a.city_id = ci.city_id
-        JOIN public.store s      ON s.address_id = a.address_id
-        JOIN public.inventory i  ON i.store_id = s.store_id
-        JOIN public.film f       ON f.film_id = i.film_id
-        JOIN public.language l   ON l.language_id = f.language_id
-        LEFT JOIN public.rental r ON r.inventory_id = i.inventory_id
-        WHERE c.country_id = v_country_id
-        GROUP BY 
-            c.country, f.title, f.rating, l.name, f.length, f.release_year
-        HAVING COUNT(r.rental_id) = v_max_rentals;
+    )
+    SELECT
+        ctry_name        AS country_name,
+        flm_title        AS film_title,
+        flm_rating       AS rating,
+        lang_name        AS language_name,
+        flm_length       AS length,
+        flm_release_year AS release_year
+    FROM film_stats
+    WHERE rn = 1
+    ORDER BY ctry_name;
 
-    END LOOP;
-
+    IF NOT FOUND THEN
+        RAISE EXCEPTION
+            'No rental data found for the provided countries: %', countries;
+    END IF;
 END;
 $$;
-
-SELECT * FROM most_popular_films_by_countries(
-    ARRAY['Afghanistan','Brazil','United States']
-);
 
 
 --TASK 4
