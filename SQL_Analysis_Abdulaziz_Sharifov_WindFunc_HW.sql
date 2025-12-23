@@ -2,32 +2,32 @@
 --TASK 1
 
 WITH customer_channel_sales AS (
-
     SELECT
         ch.channel_desc,
-        c.cust_last_name,
+        c.cust_id,
         c.cust_first_name,
+        c.cust_last_name,
         SUM(s.amount_sold) AS amount_sold
-    FROM sales s
-    JOIN customers c ON s.cust_id = c.cust_id
-    JOIN channels ch ON s.channel_id = ch.channel_id
+    FROM sh.sales s
+    JOIN sh.customers c ON s.cust_id = c.cust_id
+    JOIN sh.channels ch ON s.channel_id = ch.channel_id
     GROUP BY
         ch.channel_desc,
-        c.cust_last_name,
-        c.cust_first_name
+        c.cust_id,
+        c.cust_first_name,
+        c.cust_last_name
 ),
 ranked_customers AS (
-
     SELECT
         channel_desc,
-        cust_last_name,
+        cust_id,
         cust_first_name,
+        cust_last_name,
         amount_sold,
-        DENSE_RANK() OVER (
+        ROW_NUMBER() OVER (
             PARTITION BY channel_desc
             ORDER BY amount_sold DESC
-        ) AS rnk,
-
+        ) AS rn,
         SUM(amount_sold) OVER (
             PARTITION BY channel_desc
         ) AS channel_total
@@ -43,7 +43,7 @@ SELECT
         'FM9999990.0000'
     ) || ' %' AS sales_percentage
 FROM ranked_customers
-WHERE rnk <= 5
+WHERE rn <= 5
 ORDER BY
     channel_desc,
     amount_sold DESC;
@@ -56,24 +56,28 @@ CREATE EXTENSION IF NOT EXISTS tablefunc;
 
 SELECT
     product_name,
-    TO_CHAR(q1, 'FM9999999.00') AS q1,
-    TO_CHAR(q2, 'FM9999999.00') AS q2,
-    TO_CHAR(q3, 'FM9999999.00') AS q3,
-    TO_CHAR(q4, 'FM9999999.00') AS q4,
-    TO_CHAR(q1 + q2 + q3 + q4, 'FM9999999.00') AS year_sum
+    TO_CHAR(COALESCE(q1, 0), 'FM9999999.00') AS q1,
+    TO_CHAR(COALESCE(q2, 0), 'FM9999999.00') AS q2,
+    TO_CHAR(COALESCE(q3, 0), 'FM9999999.00') AS q3,
+    TO_CHAR(COALESCE(q4, 0), 'FM9999999.00') AS q4,
+    TO_CHAR(
+        COALESCE(q1,0) + COALESCE(q2,0) +
+        COALESCE(q3,0) + COALESCE(q4,0),
+        'FM9999999.00'
+    ) AS year_sum
 FROM crosstab(
     $$
     SELECT
         p.prod_name,
         t.calendar_quarter_desc,
         SUM(s.amount_sold)
-    FROM sales s
-    JOIN products p   ON s.prod_id = p.prod_id
-    JOIN times t      ON s.time_id = t.time_id
-    JOIN customers c  ON s.cust_id = c.cust_id
-    JOIN countries co ON c.country_id = co.country_id
-    WHERE p.prod_category = 'Photo'
-      AND co.region = 'Asia'
+    FROM sh.sales s
+    JOIN sh.products p   ON s.prod_id = p.prod_id
+    JOIN sh.times t      ON s.time_id = t.time_id
+    JOIN sh.customers c  ON s.cust_id = c.cust_id
+    JOIN sh.countries co ON c.country_id = co.country_id
+    WHERE UPPER(p.prod_category) = 'PHOTO'
+      AND UPPER(co.country_region) = 'ASIA'
       AND t.calendar_year = 2000
     GROUP BY
         p.prod_name,
@@ -95,73 +99,83 @@ ORDER BY year_sum DESC;
 --TASK 3
 
 WITH yearly_sales AS (
-
     SELECT
         s.cust_id,
-        ch.channel_desc,
         t.calendar_year,
         SUM(s.amount_sold) AS total_sales
-    FROM sales s
-    JOIN times t    ON s.time_id = t.time_id
-    JOIN channels ch ON s.channel_id = ch.channel_id
+    FROM sh.sales s
+    JOIN sh.times t ON s.time_id = t.time_id
     WHERE t.calendar_year IN (1998, 1999, 2001)
     GROUP BY
         s.cust_id,
-        ch.channel_desc,
         t.calendar_year
 ),
-ranked_customers AS (
-
+ranked AS (
     SELECT
         cust_id,
-        channel_desc,
         calendar_year,
         total_sales,
-        DENSE_RANK() OVER (
+        ROW_NUMBER() OVER (
             PARTITION BY calendar_year
             ORDER BY total_sales DESC
-        ) AS rnk
+        ) AS rn
     FROM yearly_sales
+),
+top_customers AS (
+    SELECT cust_id
+    FROM ranked
+    WHERE rn <= 300
+    GROUP BY cust_id
+    HAVING COUNT(DISTINCT calendar_year) = 3
 )
 SELECT
-    rc.channel_desc,
-    rc.calendar_year,
+    ch.channel_desc,
+    t.calendar_year,
     c.cust_last_name,
     c.cust_first_name,
-    TO_CHAR(rc.total_sales, 'FM999999999.00') AS total_sales
-FROM ranked_customers rc
-JOIN customers c ON rc.cust_id = c.cust_id
-WHERE rc.rnk <= 300
+    TO_CHAR(SUM(s.amount_sold), 'FM999999999.00') AS total_sales
+FROM sh.sales s
+JOIN sh.times t      ON s.time_id = t.time_id
+JOIN sh.channels ch  ON s.channel_id = ch.channel_id
+JOIN sh.customers c  ON s.cust_id = c.cust_id
+JOIN top_customers tc ON s.cust_id = tc.cust_id
+WHERE t.calendar_year IN (1998, 1999, 2001)
+GROUP BY
+    ch.channel_desc,
+    t.calendar_year,
+    c.cust_last_name,
+    c.cust_first_name
 ORDER BY
-    rc.calendar_year,
-    rc.channel_desc,
-    rc.total_sales DESC;
+    t.calendar_year,
+    ch.channel_desc,
+    total_sales DESC;
 
 
     
 --TASK 4
 
-SELECT
+SELECT DISTINCT
     t.calendar_month_desc,
     p.prod_category,
     TO_CHAR(
-        SUM(CASE WHEN co.region = 'Americas' THEN s.amount_sold END),
+        SUM(CASE WHEN UPPER(co.country_region) = 'AMERICAS'
+                 THEN s.amount_sold END)
+        OVER (PARTITION BY t.calendar_month_desc, p.prod_category),
         'FM999999999'
     ) AS "Americas SALES",
     TO_CHAR(
-        SUM(CASE WHEN co.region = 'Europe' THEN s.amount_sold END),
+        SUM(CASE WHEN UPPER(co.country_region) = 'EUROPE'
+                 THEN s.amount_sold END)
+        OVER (PARTITION BY t.calendar_month_desc, p.prod_category),
         'FM999999999'
     ) AS "Europe SALES"
-FROM sales s
-JOIN times t      ON s.time_id = t.time_id
-JOIN products p   ON s.prod_id = p.prod_id
-JOIN customers c  ON s.cust_id = c.cust_id
-JOIN countries co ON c.country_id = co.country_id
+FROM sh.sales s
+JOIN sh.times t      ON s.time_id = t.time_id
+JOIN sh.products p   ON s.prod_id = p.prod_id
+JOIN sh.customers c  ON s.cust_id = c.cust_id
+JOIN sh.countries co ON c.country_id = co.country_id
 WHERE t.calendar_year = 2000
   AND t.calendar_month_number IN (1, 2, 3)
-GROUP BY
-    t.calendar_month_desc,
-    p.prod_category
 ORDER BY
     t.calendar_month_desc,
     p.prod_category;
